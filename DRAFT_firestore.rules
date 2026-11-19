@@ -1,0 +1,749 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 3: Global Hardened Primitives
+    // ------------------------------------------------------------------
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSuperAdmin() {
+      return isVerified() && (
+        request.auth.token.email == 'ayush.0251mba543@dgu.ac.in' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isCompanyAdmin(companyId) {
+      return isVerified() && (
+        isSuperAdmin() ||
+        (
+          exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.role == 'company_admin' &&
+          get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.status == 'active'
+        )
+      );
+    }
+
+    function isManagerOrAdmin(companyId) {
+      return isVerified() && (
+        isSuperAdmin() ||
+        (
+          exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.status == 'active' &&
+          get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.role in ['company_admin', 'department_manager']
+        )
+      );
+    }
+
+    function isCompanyMember(companyId) {
+      return isVerified() && (
+        isSuperAdmin() ||
+        (
+          exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.status == 'active'
+        )
+      );
+    }
+
+    // ------------------------------------------------------------------
+    // Validation Blueprints (Phase 4)
+    // ------------------------------------------------------------------
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'companyId', 'departmentId', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role in ['super_admin', 'company_admin', 'department_manager', 'operator']
+        && data.status in ['active', 'pending', 'suspended']
+        && (!('companyId' in data) || (data.companyId is string && data.companyId.size() <= 128))
+        && (!('departmentId' in data) || (data.departmentId is string && data.departmentId.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCompany(data) {
+      return data.keys().hasAll(['id', 'name', 'segment', 'location', 'registrationStatus', 'adminUid', 'enabledModules', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'segment', 'location', 'gstNumber', 'registrationStatus', 'adminUid', 'enabledModules', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 160
+        && data.segment in ['pharma', 'chemicals', 'food', 'electronics', 'engineering']
+        && data.location is string && data.location.size() >= 2 && data.location.size() <= 200
+        && (!('gstNumber' in data) || (data.gstNumber is string && data.gstNumber.size() <= 32))
+        && data.registrationStatus in ['pending', 'approved', 'suspended']
+        && isValidId(data.adminUid)
+        && data.enabledModules is list && data.enabledModules.size() >= 1 && data.enabledModules.size() <= 12
+        && data.enabledModules[0] is string
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCompanyMember(data, companyId) {
+      return data.keys().hasAll(['uid', 'companyId', 'email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'companyId', 'email', 'displayName', 'role', 'departmentId', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.companyId == companyId
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role in ['company_admin', 'department_manager', 'operator']
+        && data.status in ['active', 'invited', 'disabled']
+        && (!('departmentId' in data) || (data.departmentId is string && data.departmentId.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDepartment(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'name', 'code', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'name', 'code', 'managerName', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
+        && data.code is string && data.code.size() >= 2 && data.code.size() <= 24
+        && (!('managerName' in data) || (data.managerName is string && data.managerName.size() <= 120))
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidIndustrialProfile(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'segment', 'validatedProblems', 'regulatoryFrameworks', 'qcParameters', 'updatedByUid', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'segment', 'validatedProblems', 'regulatoryFrameworks', 'qcParameters', 'updatedByUid', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.segment in ['pharma', 'chemicals', 'food', 'electronics', 'engineering']
+        && data.validatedProblems is list && data.validatedProblems.size() <= 20
+        && (data.validatedProblems.size() == 0 || data.validatedProblems[0] is string)
+        && data.regulatoryFrameworks is list && data.regulatoryFrameworks.size() <= 20
+        && (data.regulatoryFrameworks.size() == 0 || data.regulatoryFrameworks[0] is string)
+        && data.qcParameters is list && data.qcParameters.size() <= 20
+        && (data.qcParameters.size() == 0 || data.qcParameters[0] is string)
+        && isValidId(data.updatedByUid)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSupplier(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'name', 'category', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'name', 'category', 'contactName', 'contactEmail', 'phone', 'city', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 160
+        && data.category is string && data.category.size() >= 2 && data.category.size() <= 80
+        && (!('contactName' in data) || (data.contactName is string && data.contactName.size() <= 120))
+        && (!('contactEmail' in data) || (data.contactEmail is string && data.contactEmail.size() <= 200))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 40))
+        && (!('city' in data) || (data.city is string && data.city.size() <= 100))
+        && data.status in ['approved', 'probation', 'blocked']
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInventoryItem(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'sku', 'name', 'itemType', 'unit', 'currentStock', 'minStock', 'maxStock', 'unitCostInr', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'sku', 'name', 'itemType', 'departmentId', 'unit', 'currentStock', 'minStock', 'maxStock', 'unitCostInr', 'supplierId', 'dailyConsumptionAvg', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.sku is string && data.sku.size() >= 2 && data.sku.size() <= 64
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 160
+        && data.itemType in ['raw_material', 'finished_goods', 'component', 'packaging']
+        && (!('departmentId' in data) || (data.departmentId is string && data.departmentId.size() <= 128))
+        && data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 24
+        && data.currentStock is number && data.currentStock >= 0
+        && data.minStock is number && data.minStock >= 0
+        && data.maxStock is number && data.maxStock >= data.minStock
+        && data.unitCostInr is number && data.unitCostInr >= 0
+        && (!('supplierId' in data) || (data.supplierId is string && data.supplierId.size() <= 128))
+        && (!('dailyConsumptionAvg' in data) || (data.dailyConsumptionAvg is number && data.dailyConsumptionAvg >= 0))
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStockMovement(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'itemId', 'movementType', 'quantity', 'createdByUid', 'createdAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'itemId', 'movementType', 'quantity', 'reference', 'createdByUid', 'createdAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && isValidId(data.itemId)
+        && data.movementType in ['inbound', 'outbound', 'adjustment', 'return']
+        && data.quantity is number && data.quantity > 0
+        && (!('reference' in data) || (data.reference is string && data.reference.size() <= 120))
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidPurchaseOrder(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'poNumber', 'supplierId', 'materialName', 'quantity', 'totalCostInr', 'expectedDate', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'poNumber', 'supplierId', 'materialName', 'quantity', 'unit', 'totalCostInr', 'expectedDate', 'deliveredDate', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.poNumber is string && data.poNumber.size() >= 2 && data.poNumber.size() <= 64
+        && isValidId(data.supplierId)
+        && data.materialName is string && data.materialName.size() >= 2 && data.materialName.size() <= 160
+        && data.quantity is number && data.quantity > 0
+        && (!('unit' in data) || (data.unit is string && data.unit.size() <= 24))
+        && data.totalCostInr is number && data.totalCostInr >= 0
+        && data.expectedDate is string && data.expectedDate.size() <= 32
+        && (!('deliveredDate' in data) || (data.deliveredDate is string && data.deliveredDate.size() <= 32))
+        && data.status in ['ordered', 'in_transit', 'delivered_on_time', 'delivered_late', 'delayed', 'cancelled']
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidProductionOrder(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'orderCode', 'productName', 'departmentId', 'targetQty', 'actualQty', 'dueDate', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'orderCode', 'productName', 'batchCode', 'departmentId', 'machineId', 'targetQty', 'actualQty', 'reworkQty', 'operationalCostInr', 'dueDate', 'status', 'scheduleApprovedByUid', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.orderCode is string && data.orderCode.size() >= 2 && data.orderCode.size() <= 64
+        && data.productName is string && data.productName.size() >= 2 && data.productName.size() <= 160
+        && (!('batchCode' in data) || (data.batchCode is string && data.batchCode.size() <= 64))
+        && isValidId(data.departmentId)
+        && (!('machineId' in data) || (data.machineId is string && data.machineId.size() <= 128))
+        && data.targetQty is number && data.targetQty > 0
+        && data.actualQty is number && data.actualQty >= 0
+        && (!('reworkQty' in data) || (data.reworkQty is number && data.reworkQty >= 0))
+        && (!('operationalCostInr' in data) || (data.operationalCostInr is number && data.operationalCostInr >= 0))
+        && data.dueDate is string && data.dueDate.size() <= 32
+        && data.status in ['scheduled', 'in_progress', 'delayed', 'completed', 'on_hold']
+        && (!('scheduleApprovedByUid' in data) || (data.scheduleApprovedByUid is string && data.scheduleApprovedByUid.size() <= 128))
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMachine(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'code', 'name', 'departmentId', 'status', 'utilizationPct', 'downtimeHoursMonth', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'code', 'name', 'departmentId', 'status', 'utilizationPct', 'downtimeHoursMonth', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.code is string && data.code.size() >= 2 && data.code.size() <= 64
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 160
+        && isValidId(data.departmentId)
+        && data.status in ['running', 'idle', 'maintenance', 'down']
+        && data.utilizationPct is number && data.utilizationPct >= 0 && data.utilizationPct <= 100
+        && data.downtimeHoursMonth is number && data.downtimeHoursMonth >= 0
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMachineDowntime(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'machineId', 'reason', 'durationHours', 'downtimeType', 'loggedDate', 'createdByUid', 'createdAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'machineId', 'reason', 'durationHours', 'downtimeType', 'loggedDate', 'createdByUid', 'createdAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && isValidId(data.machineId)
+        && data.reason is string && data.reason.size() >= 2 && data.reason.size() <= 240
+        && data.durationHours is number && data.durationHours > 0
+        && data.downtimeType in ['unplanned', 'maintenance', 'changeover', 'power']
+        && data.loggedDate is string && data.loggedDate.size() <= 32
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidQualityInspection(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'inspectionCode', 'inspectionType', 'subjectName', 'result', 'releaseStatus', 'inspectedDate', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'inspectionCode', 'inspectionType', 'subjectName', 'batchCode', 'supplierId', 'departmentId', 'parametersChecked', 'result', 'releaseStatus', 'defectCategory', 'correctiveAction', 'approvedByUid', 'inspectedDate', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.inspectionCode is string && data.inspectionCode.size() >= 2 && data.inspectionCode.size() <= 64
+        && data.inspectionType in ['raw_material', 'in_process', 'batch_release', 'component']
+        && data.subjectName is string && data.subjectName.size() >= 2 && data.subjectName.size() <= 160
+        && (!('batchCode' in data) || (data.batchCode is string && data.batchCode.size() <= 64))
+        && (!('supplierId' in data) || (data.supplierId is string && data.supplierId.size() <= 128))
+        && (!('departmentId' in data) || (data.departmentId is string && data.departmentId.size() <= 128))
+        && (!('parametersChecked' in data) || (data.parametersChecked is string && data.parametersChecked.size() <= 500))
+        && data.result in ['pending', 'pass', 'fail', 'conditional']
+        && data.releaseStatus in ['awaiting_review', 'released', 'rejected', 'rework']
+        && (!('defectCategory' in data) || (data.defectCategory is string && data.defectCategory.size() <= 120))
+        && (!('correctiveAction' in data) || (data.correctiveAction is string && data.correctiveAction.size() <= 500))
+        && (!('approvedByUid' in data) || (data.approvedByUid is string && data.approvedByUid.size() <= 128))
+        && data.inspectedDate is string && data.inspectedDate.size() <= 32
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSafetyIncident(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'title', 'severity', 'status', 'incidentDate', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'title', 'departmentId', 'severity', 'status', 'correctiveAction', 'incidentDate', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.title is string && data.title.size() >= 3 && data.title.size() <= 160
+        && (!('departmentId' in data) || (data.departmentId is string && data.departmentId.size() <= 128))
+        && data.severity in ['low', 'medium', 'high', 'critical']
+        && data.status in ['open', 'investigating', 'closed']
+        && (!('correctiveAction' in data) || (data.correctiveAction is string && data.correctiveAction.size() <= 500))
+        && data.incidentDate is string && data.incidentDate.size() <= 32
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidComplianceDoc(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'title', 'framework', 'expiryDate', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'title', 'framework', 'departmentId', 'lastInspectionDate', 'expiryDate', 'status', 'approvedByUid', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 160
+        && data.framework is string && data.framework.size() >= 2 && data.framework.size() <= 80
+        && (!('departmentId' in data) || (data.departmentId is string && data.departmentId.size() <= 128))
+        && (!('lastInspectionDate' in data) || (data.lastInspectionDate is string && data.lastInspectionDate.size() <= 32))
+        && data.expiryDate is string && data.expiryDate.size() <= 32
+        && data.status in ['valid', 'expiring_soon', 'expired', 'pending_approval']
+        && (!('approvedByUid' in data) || (data.approvedByUid is string && data.approvedByUid.size() <= 128))
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAiRecommendation(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'domain', 'summary', 'recommendedAction', 'dataPeriod', 'sampleSize', 'createdByUid', 'createdAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'domain', 'summary', 'recommendedAction', 'dataPeriod', 'sampleSize', 'createdByUid', 'createdAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.domain is string && data.domain.size() >= 2 && data.domain.size() <= 80
+        && data.summary is string && data.summary.size() >= 2 && data.summary.size() <= 2000
+        && data.recommendedAction is string && data.recommendedAction.size() >= 2 && data.recommendedAction.size() <= 1500
+        && data.dataPeriod is string && data.dataPeriod.size() >= 2 && data.dataPeriod.size() <= 120
+        && data.sampleSize is number && data.sampleSize >= 0
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidAuditLog(data, companyId) {
+      return data.keys().hasAll(['id', 'companyId', 'actorUid', 'action', 'module', 'createdAt'])
+        && data.keys().hasOnly(['id', 'companyId', 'actorUid', 'actorEmail', 'action', 'module', 'targetId', 'details', 'createdAt'])
+        && isValidId(data.id)
+        && data.companyId == companyId
+        && data.actorUid == request.auth.uid
+        && (!('actorEmail' in data) || (data.actorEmail is string && data.actorEmail.size() <= 200))
+        && data.action is string && data.action.size() >= 2 && data.action.size() <= 120
+        && data.module is string && data.module.size() >= 2 && data.module.size() <= 64
+        && (!('targetId' in data) || (data.targetId is string && data.targetId.size() <= 128))
+        && (!('details' in data) || (data.details is string && data.details.size() <= 600))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidDemoEnquiry(data) {
+      return data.keys().hasAll(['id', 'contactName', 'companyName', 'email', 'segment', 'createdAt'])
+        && data.keys().hasOnly(['id', 'contactName', 'companyName', 'email', 'phone', 'segment', 'message', 'createdAt'])
+        && isValidId(data.id)
+        && data.contactName is string && data.contactName.size() >= 2 && data.contactName.size() <= 120
+        && data.companyName is string && data.companyName.size() >= 2 && data.companyName.size() <= 160
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 40))
+        && data.segment in ['pharma', 'chemicals', 'food', 'electronics', 'engineering']
+        && (!('message' in data) || (data.message is string && data.message.size() <= 1500))
+        && data.createdAt is timestamp;
+    }
+
+    // ------------------------------------------------------------------
+    // Admins Registry
+    // ------------------------------------------------------------------
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (adminUid == request.auth.uid || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    // ------------------------------------------------------------------
+    // Users (PII Isolated)
+    // ------------------------------------------------------------------
+    match /users/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (uid == request.auth.uid || isSuperAdmin());
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isVerified() && isValidId(uid) && uid == request.auth.uid
+        && isValidUserProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().role in ['company_admin', 'operator'] && incoming().status in ['active', 'pending']) ||
+          (incoming().role == 'super_admin' && request.auth.token.email == 'ayush.0251mba543@dgu.ac.in')
+        );
+      allow update: if isVerified() && isValidId(uid) && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isSuperAdmin() ||
+          (
+            uid == request.auth.uid
+            && incoming().role == existing().role
+            && incoming().status == existing().status
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'companyId', 'departmentId', 'updatedAt'])
+          )
+        );
+      allow delete: if isSuperAdmin() && isValidId(uid);
+    }
+
+    // ------------------------------------------------------------------
+    // Companies & Tenant Subcollections
+    // ------------------------------------------------------------------
+    match /companies/{companyId} {
+      allow get: if isValidId(companyId) && isCompanyMember(companyId);
+      allow list: if isSignedIn() && (resource.data.adminUid == request.auth.uid || isSuperAdmin());
+      allow create: if isVerified() && isValidId(companyId)
+        && isValidCompany(incoming())
+        && incoming().id == companyId
+        && incoming().adminUid == request.auth.uid
+        && incoming().registrationStatus == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified() && isValidId(companyId)
+        && isValidCompany(incoming())
+        && incoming().id == existing().id
+        && incoming().adminUid == existing().adminUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isSuperAdmin() ||
+          (
+            isCompanyAdmin(companyId)
+            && incoming().registrationStatus == existing().registrationStatus
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'segment', 'location', 'gstNumber', 'enabledModules', 'updatedAt'])
+          )
+        );
+      allow delete: if isSuperAdmin() && isValidId(companyId);
+
+      // Members subcollection (Master Source of Truth for tenant RBAC)
+      match /members/{memberUid} {
+        allow get: if isValidId(companyId) && isValidId(memberUid) && (memberUid == request.auth.uid || isCompanyMember(companyId));
+        allow list: if isValidId(companyId) && (resource.data.uid == request.auth.uid || isCompanyAdmin(companyId));
+        allow create: if isVerified() && isValidId(companyId) && isValidId(memberUid)
+          && isValidCompanyMember(incoming(), companyId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && (
+            isCompanyAdmin(companyId) ||
+            (
+              memberUid == request.auth.uid
+              && incoming().uid == request.auth.uid
+              && incoming().role == 'company_admin'
+              && exists(/databases/$(database)/documents/companies/$(companyId))
+              && get(/databases/$(database)/documents/companies/$(companyId)).data.adminUid == request.auth.uid
+            )
+          );
+        allow update: if isVerified() && isValidId(companyId) && isValidId(memberUid)
+          && isValidCompanyMember(incoming(), companyId)
+          && incoming().uid == existing().uid
+          && incoming().companyId == existing().companyId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isCompanyAdmin(companyId) ||
+            (
+              memberUid == request.auth.uid
+              && incoming().role == existing().role
+              && incoming().status == existing().status
+              && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+            )
+          );
+        allow delete: if isValidId(companyId) && isValidId(memberUid) && isCompanyAdmin(companyId);
+      }
+
+      // Departments
+      match /departments/{departmentId} {
+        allow get: if isValidId(companyId) && isValidId(departmentId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(departmentId) && isCompanyAdmin(companyId)
+          && isValidDepartment(incoming(), companyId)
+          && incoming().id == departmentId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(departmentId) && isCompanyAdmin(companyId)
+          && isValidDepartment(incoming(), companyId)
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time;
+        allow delete: if isValidId(companyId) && isValidId(departmentId) && isCompanyAdmin(companyId);
+      }
+
+      // Industrial Profile
+      match /industrial_profiles/{profileId} {
+        allow get: if isValidId(companyId) && isValidId(profileId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create, update: if isValidId(companyId) && isValidId(profileId) && isCompanyAdmin(companyId)
+          && isValidIndustrialProfile(incoming(), companyId)
+          && incoming().id == profileId
+          && incoming().updatedByUid == request.auth.uid
+          && incoming().updatedAt == request.time;
+        allow delete: if false;
+      }
+
+      // Suppliers
+      match /suppliers/{supplierId} {
+        allow get: if isValidId(companyId) && isValidId(supplierId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(supplierId) && isManagerOrAdmin(companyId)
+          && isValidSupplier(incoming(), companyId)
+          && incoming().id == supplierId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(supplierId) && isManagerOrAdmin(companyId)
+          && isValidSupplier(incoming(), companyId)
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time;
+        allow delete: if isValidId(companyId) && isValidId(supplierId) && isCompanyAdmin(companyId);
+      }
+
+      // Inventory
+      match /inventory/{itemId} {
+        allow get: if isValidId(companyId) && isValidId(itemId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(itemId) && isManagerOrAdmin(companyId)
+          && isValidInventoryItem(incoming(), companyId)
+          && incoming().id == itemId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(itemId) && isCompanyMember(companyId)
+          && isValidInventoryItem(incoming(), companyId)
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isManagerOrAdmin(companyId) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['currentStock', 'updatedAt'])
+          );
+        allow delete: if isValidId(companyId) && isValidId(itemId) && isCompanyAdmin(companyId);
+      }
+
+      // Stock Movements
+      match /stock_movements/{movementId} {
+        allow get: if isValidId(companyId) && isValidId(movementId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(movementId) && isCompanyMember(companyId)
+          && isValidStockMovement(incoming(), companyId)
+          && incoming().id == movementId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
+
+      // Purchase Orders
+      match /purchase_orders/{poId} {
+        allow get: if isValidId(companyId) && isValidId(poId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(poId) && isManagerOrAdmin(companyId)
+          && isValidPurchaseOrder(incoming(), companyId)
+          && incoming().id == poId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(poId) && isManagerOrAdmin(companyId)
+          && isValidPurchaseOrder(incoming(), companyId)
+          && existing().status != 'cancelled'
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time;
+        allow delete: if isValidId(companyId) && isValidId(poId) && isCompanyAdmin(companyId);
+      }
+
+      // Production Orders
+      match /production_orders/{orderId} {
+        allow get: if isValidId(companyId) && isValidId(orderId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(orderId) && isManagerOrAdmin(companyId)
+          && isValidProductionOrder(incoming(), companyId)
+          && incoming().id == orderId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(orderId) && isCompanyMember(companyId)
+          && isValidProductionOrder(incoming(), companyId)
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isCompanyAdmin(companyId) ||
+            (existing().status != 'completed' && isManagerOrAdmin(companyId)) ||
+            (
+              existing().status != 'completed'
+              && incoming().status in ['in_progress', 'delayed', 'on_hold']
+              && incoming().diff(existing()).affectedKeys().hasOnly(['actualQty', 'reworkQty', 'status', 'updatedAt'])
+            )
+          );
+        allow delete: if isValidId(companyId) && isValidId(orderId) && isCompanyAdmin(companyId);
+      }
+
+      // Machines
+      match /machines/{machineId} {
+        allow get: if isValidId(companyId) && isValidId(machineId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(machineId) && isManagerOrAdmin(companyId)
+          && isValidMachine(incoming(), companyId)
+          && incoming().id == machineId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(machineId) && isCompanyMember(companyId)
+          && isValidMachine(incoming(), companyId)
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isManagerOrAdmin(companyId) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'downtimeHoursMonth', 'updatedAt'])
+          );
+        allow delete: if isValidId(companyId) && isValidId(machineId) && isCompanyAdmin(companyId);
+      }
+
+      // Machine Downtime
+      match /machine_downtime/{downtimeId} {
+        allow get: if isValidId(companyId) && isValidId(downtimeId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(downtimeId) && isCompanyMember(companyId)
+          && isValidMachineDowntime(incoming(), companyId)
+          && incoming().id == downtimeId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
+
+      // Quality Inspections (Operators can submit inspection records; ONLY Manager/Admin can release/reject)
+      match /quality_inspections/{inspectionId} {
+        allow get: if isValidId(companyId) && isValidId(inspectionId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(inspectionId) && isCompanyMember(companyId)
+          && isValidQualityInspection(incoming(), companyId)
+          && incoming().id == inspectionId
+          && incoming().releaseStatus == 'awaiting_review'
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(inspectionId) && isCompanyMember(companyId)
+          && isValidQualityInspection(incoming(), companyId)
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isCompanyAdmin(companyId) ||
+            (existing().releaseStatus == 'awaiting_review' && isManagerOrAdmin(companyId))
+          );
+        allow delete: if isValidId(companyId) && isValidId(inspectionId) && isCompanyAdmin(companyId);
+      }
+
+      // Safety Incidents
+      match /safety_incidents/{incidentId} {
+        allow get: if isValidId(companyId) && isValidId(incidentId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(incidentId) && isCompanyMember(companyId)
+          && isValidSafetyIncident(incoming(), companyId)
+          && incoming().id == incidentId
+          && incoming().status == 'open'
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(incidentId) && isManagerOrAdmin(companyId)
+          && isValidSafetyIncident(incoming(), companyId)
+          && (existing().status != 'closed' || isCompanyAdmin(companyId))
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time;
+        allow delete: if isValidId(companyId) && isValidId(incidentId) && isCompanyAdmin(companyId);
+      }
+
+      // Compliance Documents
+      match /compliance_documents/{docId} {
+        allow get: if isValidId(companyId) && isValidId(docId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(docId) && isManagerOrAdmin(companyId)
+          && isValidComplianceDoc(incoming(), companyId)
+          && incoming().id == docId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(companyId) && isValidId(docId) && isManagerOrAdmin(companyId)
+          && isValidComplianceDoc(incoming(), companyId)
+          && incoming().id == existing().id
+          && incoming().companyId == existing().companyId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time;
+        allow delete: if isValidId(companyId) && isValidId(docId) && isCompanyAdmin(companyId);
+      }
+
+      // AI Recommendations
+      match /ai_recommendations/{recId} {
+        allow get: if isValidId(companyId) && isValidId(recId) && isCompanyMember(companyId);
+        allow list: if isValidId(companyId) && isCompanyMember(companyId);
+        allow create: if isValidId(companyId) && isValidId(recId) && isCompanyMember(companyId)
+          && isValidAiRecommendation(incoming(), companyId)
+          && incoming().id == recId
+          && incoming().createdByUid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
+
+      // Append-Only Audit Logs
+      match /audit_logs/{logId} {
+        allow get: if isValidId(companyId) && isValidId(logId) && isManagerOrAdmin(companyId);
+        allow list: if isValidId(companyId) && isManagerOrAdmin(companyId);
+        allow create: if isValidId(companyId) && isValidId(logId) && isCompanyMember(companyId)
+          && isValidAuditLog(incoming(), companyId)
+          && incoming().id == logId
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Public Demo / Onboarding Enquiries
+    // ------------------------------------------------------------------
+    match /demo_enquiries/{enquiryId} {
+      allow get, list: if isSuperAdmin();
+      allow create: if isValidId(enquiryId)
+        && isValidDemoEnquiry(incoming())
+        && incoming().id == enquiryId
+        && incoming().createdAt == request.time;
+      allow update, delete: if isSuperAdmin();
+    }
+  }
+}

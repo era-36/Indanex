@@ -1,0 +1,6 @@
+{
+  "name": "Selaqui Industrial Intelligence",
+  "description": "Industrial Operations Intelligence, AI Analytics and Decision Support platform for manufacturing enterprises in Selaqui, Dehradun, Uttarakhand.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,435 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Private user account profile and tenant membership pointer.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["super_admin", "company_admin", "department_manager", "operator"] },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "pending", "suspended"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "Company": {
+      "title": "Industrial Company",
+      "description": "Registered manufacturing enterprise in Selaqui Industrial Area.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "segment": { "type": "string", "enum": ["pharma", "chemicals", "food", "electronics", "engineering"] },
+        "location": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "gstNumber": { "type": "string", "maxLength": 32 },
+        "registrationStatus": { "type": "string", "enum": ["pending", "approved", "suspended"] },
+        "adminUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "enabledModules": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "segment", "location", "registrationStatus", "adminUid", "enabledModules", "createdAt", "updatedAt"]
+    },
+    "CompanyMember": {
+      "title": "Company Member",
+      "description": "Tenant-scoped user membership and role assignment.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["company_admin", "department_manager", "operator"] },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "invited", "disabled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "companyId", "email", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "Operational plant department within a company.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "code": { "type": "string", "minLength": 2, "maxLength": 24 },
+        "managerName": { "type": "string", "maxLength": 120 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "name", "code", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "IndustrialProfile": {
+      "title": "Industrial Profile",
+      "description": "Segment-specific operational validation and compliance configuration.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "segment": { "type": "string", "enum": ["pharma", "chemicals", "food", "electronics", "engineering"] },
+        "validatedProblems": { "type": "array" },
+        "regulatoryFrameworks": { "type": "array" },
+        "qcParameters": { "type": "array" },
+        "updatedByUid": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "segment", "validatedProblems", "regulatoryFrameworks", "qcParameters", "updatedByUid", "updatedAt"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Approved or evaluated material/component vendor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "category": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "contactName": { "type": "string", "maxLength": 120 },
+        "contactEmail": { "type": "string", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "city": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["approved", "probation", "blocked"] },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "name", "category", "status", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Raw material, chemical, component, or finished good stock item.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sku": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "itemType": { "type": "string", "enum": ["raw_material", "finished_goods", "component", "packaging"] },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 24 },
+        "currentStock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "maxStock": { "type": "number" },
+        "unitCostInr": { "type": "number" },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "dailyConsumptionAvg": { "type": "number" },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "sku", "name", "itemType", "unit", "currentStock", "minStock", "maxStock", "unitCostInr", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "StockMovement": {
+      "title": "Stock Movement",
+      "description": "Inbound receipt, production issue, or stock adjustment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "itemId": { "type": "string", "maxLength": 128 },
+        "movementType": { "type": "string", "enum": ["inbound", "outbound", "adjustment", "return"] },
+        "quantity": { "type": "number" },
+        "reference": { "type": "string", "maxLength": 120 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "itemId", "movementType", "quantity", "createdByUid", "createdAt"]
+    },
+    "PurchaseOrder": {
+      "title": "Purchase Order",
+      "description": "Material procurement order with supplier delivery tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "poNumber": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "materialName": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string", "maxLength": 24 },
+        "totalCostInr": { "type": "number" },
+        "expectedDate": { "type": "string", "maxLength": 32 },
+        "deliveredDate": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["ordered", "in_transit", "delivered_on_time", "delivered_late", "delayed", "cancelled"] },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "poNumber", "supplierId", "materialName", "quantity", "totalCostInr", "expectedDate", "status", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "ProductionOrder": {
+      "title": "Production Order",
+      "description": "Scheduled manufacturing batch or job order.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "orderCode": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "productName": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "batchCode": { "type": "string", "maxLength": 64 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "machineId": { "type": "string", "maxLength": 128 },
+        "targetQty": { "type": "number" },
+        "actualQty": { "type": "number" },
+        "reworkQty": { "type": "number" },
+        "operationalCostInr": { "type": "number" },
+        "dueDate": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["scheduled", "in_progress", "delayed", "completed", "on_hold"] },
+        "scheduleApprovedByUid": { "type": "string", "maxLength": 128 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "orderCode", "productName", "departmentId", "targetQty", "actualQty", "dueDate", "status", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Machine": {
+      "title": "Machine",
+      "description": "Plant production equipment and utilization asset.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["running", "idle", "maintenance", "down"] },
+        "utilizationPct": { "type": "number" },
+        "downtimeHoursMonth": { "type": "number" },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "code", "name", "departmentId", "status", "utilizationPct", "downtimeHoursMonth", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "MachineDowntime": {
+      "title": "Machine Downtime Log",
+      "description": "Recorded unplanned or planned machine stoppage.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "machineId": { "type": "string", "maxLength": 128 },
+        "reason": { "type": "string", "minLength": 2, "maxLength": 240 },
+        "durationHours": { "type": "number" },
+        "downtimeType": { "type": "string", "enum": ["unplanned", "maintenance", "changeover", "power"] },
+        "loggedDate": { "type": "string", "maxLength": 32 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "machineId", "reason", "durationHours", "downtimeType", "loggedDate", "createdByUid", "createdAt"]
+    },
+    "QualityInspection": {
+      "title": "Quality Inspection",
+      "description": "Raw material or finished batch QC inspection with formal release tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "inspectionCode": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "inspectionType": { "type": "string", "enum": ["raw_material", "in_process", "batch_release", "component"] },
+        "subjectName": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "batchCode": { "type": "string", "maxLength": 64 },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "parametersChecked": { "type": "string", "maxLength": 500 },
+        "result": { "type": "string", "enum": ["pending", "pass", "fail", "conditional"] },
+        "releaseStatus": { "type": "string", "enum": ["awaiting_review", "released", "rejected", "rework"] },
+        "defectCategory": { "type": "string", "maxLength": 120 },
+        "correctiveAction": { "type": "string", "maxLength": 500 },
+        "approvedByUid": { "type": "string", "maxLength": 128 },
+        "inspectedDate": { "type": "string", "maxLength": 32 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "inspectionCode", "inspectionType", "subjectName", "result", "releaseStatus", "inspectedDate", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "SafetyIncident": {
+      "title": "Safety Incident",
+      "description": "Workplace safety event, near-miss, or chemical/equipment hazard.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+        "status": { "type": "string", "enum": ["open", "investigating", "closed"] },
+        "correctiveAction": { "type": "string", "maxLength": 500 },
+        "incidentDate": { "type": "string", "maxLength": 32 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "title", "severity", "status", "incidentDate", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "ComplianceDocument": {
+      "title": "Compliance Document",
+      "description": "Configurable regulatory checklist, license, SOP, or calibration certificate.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "framework": { "type": "string", "maxLength": 80 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "lastInspectionDate": { "type": "string", "maxLength": 32 },
+        "expiryDate": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["valid", "expiring_soon", "expired", "pending_approval"] },
+        "approvedByUid": { "type": "string", "maxLength": 128 },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "title", "framework", "expiryDate", "status", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "AiRecommendation": {
+      "title": "AI Operational Analysis",
+      "description": "Stored statistical + Gemini operational insight with data-period traceability.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "domain": { "type": "string", "maxLength": 80 },
+        "summary": { "type": "string", "maxLength": 2000 },
+        "recommendedAction": { "type": "string", "maxLength": 1500 },
+        "dataPeriod": { "type": "string", "maxLength": 120 },
+        "sampleSize": { "type": "number" },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "domain", "summary", "recommendedAction", "dataPeriod", "sampleSize", "createdByUid", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "Immutable operational and administrative audit trail entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 200 },
+        "action": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "module": { "type": "string", "maxLength": 64 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 600 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "companyId", "actorUid", "action", "module", "createdAt"]
+    },
+    "DemoEnquiry": {
+      "title": "Demo and Contact Enquiry",
+      "description": "Public website enquiry for platform demo or company onboarding.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "contactName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "companyName": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "segment": { "type": "string", "enum": ["pharma", "chemicals", "food", "electronics", "engineering"] },
+        "message": { "type": "string", "maxLength": 1500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "contactName", "companyName", "email", "segment", "createdAt"]
+    },
+    "PlatformSetting": {
+      "title": "Platform Setting",
+      "description": "Super Admin platform-wide governance and configuration settings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "minSampleThreshold": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profiles isolated by UID."
+    },
+    "/companies/{companyId}": {
+      "schema": { "$ref": "#/entities/Company" },
+      "description": "Registered industrial company records."
+    },
+    "/companies/{companyId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/CompanyMember" },
+      "description": "Company-scoped RBAC membership documents."
+    },
+    "/companies/{companyId}/departments/{departmentId}": {
+      "schema": { "$ref": "#/entities/Department" },
+      "description": "Departments within an industrial company."
+    },
+    "/companies/{companyId}/industrial_profiles/{profileId}": {
+      "schema": { "$ref": "#/entities/IndustrialProfile" },
+      "description": "Segment-specific operational problem validations and QC/compliance presets."
+    },
+    "/companies/{companyId}/suppliers/{supplierId}": {
+      "schema": { "$ref": "#/entities/Supplier" },
+      "description": "Registered company suppliers."
+    },
+    "/companies/{companyId}/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Raw material and finished goods inventory records."
+    },
+    "/companies/{companyId}/stock_movements/{movementId}": {
+      "schema": { "$ref": "#/entities/StockMovement" },
+      "description": "Stock movement ledger entries."
+    },
+    "/companies/{companyId}/purchase_orders/{poId}": {
+      "schema": { "$ref": "#/entities/PurchaseOrder" },
+      "description": "Supplier purchase orders and delivery tracking."
+    },
+    "/companies/{companyId}/production_orders/{orderId}": {
+      "schema": { "$ref": "#/entities/ProductionOrder" },
+      "description": "Production orders, batch targets, and schedules."
+    },
+    "/companies/{companyId}/machines/{machineId}": {
+      "schema": { "$ref": "#/entities/Machine" },
+      "description": "Plant machines and utilization tracking."
+    },
+    "/companies/{companyId}/machine_downtime/{downtimeId}": {
+      "schema": { "$ref": "#/entities/MachineDowntime" },
+      "description": "Machine downtime incidents."
+    },
+    "/companies/{companyId}/quality_inspections/{inspectionId}": {
+      "schema": { "$ref": "#/entities/QualityInspection" },
+      "description": "Quality control inspections and human release decisions."
+    },
+    "/companies/{companyId}/safety_incidents/{incidentId}": {
+      "schema": { "$ref": "#/entities/SafetyIncident" },
+      "description": "Safety incident reports."
+    },
+    "/companies/{companyId}/compliance_documents/{docId}": {
+      "schema": { "$ref": "#/entities/ComplianceDocument" },
+      "description": "Regulatory compliance checklists and expiry documents."
+    },
+    "/companies/{companyId}/ai_recommendations/{recId}": {
+      "schema": { "$ref": "#/entities/AiRecommendation" },
+      "description": "Logged AI operational insights."
+    },
+    "/companies/{companyId}/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable append-only audit logs."
+    },
+    "/demo_enquiries/{enquiryId}": {
+      "schema": { "$ref": "#/entities/DemoEnquiry" },
+      "description": "Public demo and onboarding enquiries."
+    },
+    "/platform_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/PlatformSetting" },
+      "description": "Super Admin platform configuration records."
+    }
+  }
+}
